@@ -1,5 +1,31 @@
-- Living
-- Final
+cellframe-node-cli global_db get_keys 
+-group foobar.nodes.list- Living
+- Final        group name: foobar.nodes.list
+        keys list:
+
+                key: 69A4::0747::002F::6C3C
+                time: Thu, 26 Sep 2024 04:01:51 +0000
+                type: record
+                
+                key: 004F::C294::1912::CEF6
+                time: Thu, 26 Sep 2024 04:01:51 +0000
+                type: record
+
+                key: 0737::46BB::BD54::9B12
+                time: Thu, 26 Sep 2024 04:01:51 +0000
+                type: record
+
+                key: B671::E83E::ED7E::7FC8
+                time: Thu, 26 Sep 2024 04:01:51 +0000
+                type: record
+
+                key: C5DC::CEC6::16B1::D8C7
+                time: Thu, 26 Sep 2024 04:01:52 +0000
+                type: record
+
+                key: 17CD::9A15::709D::FEDD
+                time: Thu, 26 Sep 2024 04:11:03 +0000
+                type: record
 - Last Call
 - Review
 - Draft
