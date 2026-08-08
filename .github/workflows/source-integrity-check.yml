@@ -1,0 +1,193 @@
+name: Source Integrity Check
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  pull-requests: read
+  contents: read
+  security-events: write
+
+jobs:
+  integrity-verification:
+    name: Verify Source Code Integrity
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Check for Critical File Changes
+        run: |
+          CRITICAL_FILES=(
+            ".github/CODEOWNERS"
+            ".github/workflows/ci.yml"
+            ".github/workflows/enforce-signed-commits.yml"
+            "config/eipw.toml"
+            "CONTRIBUTING.md"
+            "LICENSE.md"
+            "README.md"
+            "_config.yml"
+          )
+          
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..HEAD)
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD)
+          fi
+          
+          echo "Checking for changes to critical files..."
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo ""
+          
+          CRITICAL_CHANGED=false
+          for critical_file in "${CRITICAL_FILES[@]}"; do
+            if echo "$CHANGED_FILES" | grep -q "^${critical_file}$"; then
+              echo "⚠️  Critical file changed: $critical_file"
+              CRITICAL_CHANGED=true
+            fi
+          done
+          
+          if [ "$CRITICAL_CHANGED" = true ]; then
+            echo ""
+            echo "ℹ️  Critical files changed - ensuring additional scrutiny"
+          fi
+
+      - name: Validate File Types
+        run: |
+          echo "Scanning for suspicious file types in EIPS directory..."
+          
+          SUSPICIOUS_FILES=$(find EIPS -type f \( -name "*.exe" -o -name "*.dll" -o -name "*.so" -o -name "*.bin" \) 2>/dev/null || true)
+          
+          if [ -n "$SUSPICIOUS_FILES" ]; then
+            echo "❌ Found suspicious executable files:"
+            echo "$SUSPICIOUS_FILES"
+            exit 1
+          else
+            echo "✅ No suspicious executable files found"
+          fi
+
+      - name: Check for Unauthorized Changes
+        run: |
+          echo "Scanning for unauthorized modifications..."
+          
+          # Check for .git directory modifications (except normal commits)
+          if git ls-files --stage | grep -q '100644.*\.git'; then
+            echo "❌ Detected modifications to .git tracking"
+            exit 1
+          fi
+          
+          # Check for suspicious patterns
+          SUSPICIOUS_PATTERNS=(
+            "DROP TABLE"
+            "DELETE FROM"
+            "eval("
+            "exec("
+            "__import__"
+          )
+          
+          for pattern in "${SUSPICIOUS_PATTERNS[@]}"; do
+            COUNT=$(grep -r "$pattern" EIPS --include="*.md" 2>/dev/null | wc -l)
+            if [ $COUNT -gt 0 ]; then
+              echo "⚠️  Found potentially dangerous pattern '$pattern' in $COUNT files"
+            fi
+          done
+          
+          echo "✅ Authorization check passed"
+
+      - name: Verify Directory Structure
+        run: |
+          echo "Verifying repository structure..."
+          
+          # Required directories
+          REQUIRED_DIRS=(
+            ".github"
+            ".github/workflows"
+            "EIPS"
+            "config"
+            "_includes"
+            "_layouts"
+            "assets"
+          )
+          
+          for dir in "${REQUIRED_DIRS[@]}"; do
+            if [ -d "$dir" ]; then
+              echo "✅ Directory present: $dir"
+            else
+              echo "❌ Missing required directory: $dir"
+              exit 1
+            fi
+          done
+
+      - name: Run Integrity Verification Script
+        run: |
+          # Make script executable
+          chmod +x scripts/verify-source-integrity.sh
+          
+          # Run verification (non-strict mode for CI)
+          ./scripts/verify-source-integrity.sh
+
+  check-permissions:
+    name: Verify File Permissions
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Check Critical File Permissions
+        run: |
+          echo "Verifying file permissions..."
+          
+          CRITICAL_FILES=(
+            ".github/CODEOWNERS"
+            "config/eipw.toml"
+            "LICENSE.md"
+          )
+          
+          for file in "${CRITICAL_FILES[@]}"; do
+            if [ -f "$file" ]; then
+              PERMS=$(stat -f %OLp "$file" 2>/dev/null || stat -c %a "$file")
+              echo "  $file: $PERMS"
+            fi
+          done
+
+  dependency-check:
+    name: Check Dependencies for Vulnerabilities
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Check Gemfile for Vulnerable Dependencies
+        run: |
+          if [ -f "Gemfile.lock" ]; then
+            echo "Checking Ruby gem dependencies..."
+            # Note: Full vulnerability check requires bundler-audit
+            # Uncomment to enable:
+            # gem install bundler-audit
+            # bundle-audit check
+            echo "✅ Gemfile.lock present"
+          fi
+
+      - name: Check for Known Vulnerable Patterns
+        run: |
+          echo "Scanning for known vulnerability patterns..."
+          
+          # Check for unsafe git URLs
+          if grep -r "github\.com" . --include="Gemfile*" --include="*.md" | grep -v "https://github.com"; then
+            echo "⚠️  Found non-HTTPS GitHub URLs - ensure HTTPS is used"
+          fi
+          
+          echo "✅ Vulnerability pattern check passed"

@@ -1,0 +1,88 @@
+name: Enforce Signed Commits
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  verify-signatures:
+    name: Verify Commit Signatures
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          
+      - name: Verify all commits are signed
+        run: |
+          # Get the list of commits in this PR
+          COMMITS=$(git rev-list ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          
+          UNSIGNED_COMMITS=()
+          
+          for commit in $COMMITS; do
+            # Check if commit is signed
+            if ! git verify-commit $commit 2>/dev/null; then
+              UNSIGNED_COMMITS+=("$commit")
+            fi
+          done
+          
+          if [ ${#UNSIGNED_COMMITS[@]} -gt 0 ]; then
+            echo "❌ Found unsigned commits:"
+            for commit in "${UNSIGNED_COMMITS[@]}"; do
+              echo "  - $commit"
+            done
+            echo ""
+            echo "To sign commits, use: git commit -S -m 'message'"
+            echo "To sign existing commits: git rebase --exec 'git commit --amend --no-edit -S' master"
+            exit 1
+          else
+            echo "✅ All commits are properly signed"
+          fi
+
+  validate-signoff:
+    name: Validate Developer Certificate of Origin
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          
+      - name: Check for DCO sign-off
+        run: |
+          # Get all commits in this PR
+          COMMITS=$(git rev-list ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          
+          MISSING_DCO=()
+          
+          for commit in $COMMITS; do
+            # Check if commit message includes "Signed-off-by"
+            MESSAGE=$(git log -1 --pretty=%B $commit)
+            if ! echo "$MESSAGE" | grep -q "Signed-off-by:"; then
+              MISSING_DCO+=("$commit")
+            fi
+          done
+          
+          if [ ${#MISSING_DCO[@]} -gt 0 ]; then
+            echo "⚠️  Warning: Commits missing DCO sign-off:"
+            for commit in "${MISSING_DCO[@]}"; do
+              echo "  - $commit"
+            done
+            echo ""
+            echo "Add DCO: git commit --amend --no-edit && git commit --amend -m \"$(git log -1 --pretty=%B)\n\nSigned-off-by: Your Name <your.email@example.com>\""
+            # Note: This is a warning only. Can be made mandatory by changing exit code to 1
+            exit 0
+          else
+            echo "✅ All commits include DCO sign-off"
+          fi
